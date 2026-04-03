@@ -1,0 +1,15 @@
+# Default Python dependencies for MathorCup submissions.
+# Keep this file lightweight and broadly compatible.
+
+numpy
+scipy
+pandas
+sympy
+scikit-learn
+
+matplotlib
+seaborn
+
+tqdm
+networkx
+
