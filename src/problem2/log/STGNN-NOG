@@ -1,0 +1,21 @@
+C:\Users\20409\.conda\envs\euler1\python.exe D:\MathorCup\code\MathorCup\src\problem2\main.py
+Using device: cuda
+Loading and preparing data...
+【消融实验】已屏蔽拓扑图，当前为纯时序 Baseline
+
+[Start Training]
+Epoch 6/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0178]Epoch [5/20] | Train Score: 1.3876 | Test Score: 1.3987
+Epoch 11/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0137]Epoch [10/20] | Train Score: 1.3773 | Test Score: 1.4027
+Epoch 16/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0139]Epoch [15/20] | Train Score: 1.3256 | Test Score: 1.3687
+Epoch [20/20] | Train Score: 1.3187 | Test Score: 1.3753
+
+=============================================
+🏁 【最终模型全局成绩单 (Epoch 20 结束时)】
+   是否引入图结构 (USE_GRAPH) : False
+---------------------------------------------
+   均方根误差 (RMSE) : 2.3671
+   平均绝对误差 (MAE) : 1.1077
+   决定系数 (R²)     : 0.3488
+=============================================
+
+进程已结束，退出代码为 0

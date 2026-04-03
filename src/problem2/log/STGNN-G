@@ -1,0 +1,18 @@
+C:\Users\20409\.conda\envs\euler1\python.exe D:\MathorCup\code\MathorCup\src\problem2\main.py
+Using device: cuda
+Loading and preparing data...
+Epoch 1/20:   0%|          | 0/63 [00:00<?, ?it/s]
+[Start Training]
+Epoch 6/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0210]Epoch [5/20] | Train Score: 1.5303 | Test Score: 1.5323
+Epoch 11/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0164]Epoch [10/20] | Train Score: 1.5050 | Test Score: 1.5185
+Epoch 16/20:   0%|          | 0/63 [00:00<?, ?it/s, loss=0.0159]Epoch [15/20] | Train Score: 1.4386 | Test Score: 1.5031
+Epoch [20/20] | Train Score: 1.4035 | Test Score: 1.4892
+
+=============================================
+🏁 【最终模型全局成绩单 (Epoch 20 结束时)】
+   是否引入图结构 (USE_GRAPH) : True
+---------------------------------------------
+   均方根误差 (RMSE) : 2.5761
+   平均绝对误差 (MAE) : 1.1845
+   决定系数 (R²)     : 0.2929
+=============================================
