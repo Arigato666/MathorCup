@@ -1,6 +1,13 @@
 """
-拼接全时间轴；56 个 OD（剔除自环）；按列 MinMaxScaler 仅在训练时间步上 fit；
-测试样本的输入窗口可跨过第三周末尾。
+与 v3 相同的全时间轴 + 跨第三周/第四周边界的输入窗口。
+
+说明（纠正常见误判）：
+- MinMaxScaler 仅在 mat[:T_tr] 上 fit，测试段只做 transform，不存在「用测试集统计量 fit」。
+- 曾出现的 RMSE=0、R²=1 来自时间戳类型混用导致 t_map 查表失败、矩阵全零，并非「把测试写进矩阵」本身。
+- 若测试窗口的输入里含第四周已发生的真实 OD（teacher forcing），属于在线预测意义上的信息泄漏；
+  赛题批量评估里常用此设定；若需严格滚动预测，应改用逐步递推或仅用训练段为输入的窗口（会改变可预测时刻集合）。
+
+不把训练/测试拆成两个独立时间轴滑窗：否则第四周前 L 个时刻无法利用第三周末尾作输入，任务定义被改变。
 """
 from __future__ import annotations
 
@@ -46,8 +53,6 @@ def load_and_build(
     pairs, od2idx = od_pairs_56(nodes)
     n_od = len(pairs)
 
-    # 统一为 pandas.Timestamp，避免 unique() 得到 numpy.datetime64 而 itertuples 得到
-    # Timestamp 时 hash 不同导致 `ts not in t_map`，矩阵全为 0、指标虚假为 RMSE=0、R²=1。
     times_tr = sorted({pd.Timestamp(t) for t in df_tr["time_slot"].unique()})
     times_te = sorted({pd.Timestamp(t) for t in df_te["time_slot"].unique()})
     all_times = sorted(set(times_tr) | set(times_te))
@@ -62,13 +67,11 @@ def load_and_build(
             key = (row[1], row[2])
             if key not in od2idx:
                 continue
-            # Normalize timestamp object to pandas.Timestamp to ensure consistent hashing
             try:
                 ts = pd.Timestamp(row[0])
             except Exception:
                 ts = pd.to_datetime(row[0])
             if ts not in t_map:
-                # if still missing, skip this record (avoids KeyError for weird types)
                 continue
             mat[t_map[ts], od2idx[key]] = float(row[3])
 
