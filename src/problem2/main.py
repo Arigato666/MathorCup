@@ -26,8 +26,8 @@ def evaluate_epoch(model, x, y, scaler, n_nodes):
         trues = y.cpu().numpy()
 
     # 反归一化
-    preds_inv = scaler.inverse_transform(preds.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
-    trues_inv = scaler.inverse_transform(trues.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
+    preds_inv = scaler.inverse_transform(preds.reshape(-1, n_nodes ** 2))
+    trues_inv = scaler.inverse_transform(trues.reshape(-1, n_nodes ** 2))
 
     # 截断负数客流
     preds_inv = np.maximum(preds_inv, 0)

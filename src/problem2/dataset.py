@@ -29,10 +29,10 @@ def prep_data(train_csv, test_csv, seq_len):
     mat_tr = build_tensor(df_tr)
     mat_te = build_tensor(df_te)
 
-    # 铺平为单列做【全局】归一化，保留 OD 对之间的大小差异
+    # 铺平做归一化
     scaler = MinMaxScaler()
-    tr_scaled = scaler.fit_transform(mat_tr.reshape(-1, 1)).reshape(mat_tr.shape)
-    te_scaled = scaler.transform(mat_te.reshape(-1, 1)).reshape(mat_te.shape)
+    tr_scaled = scaler.fit_transform(mat_tr.reshape(-1, n_nodes ** 2)).reshape(mat_tr.shape)
+    te_scaled = scaler.transform(mat_te.reshape(-1, n_nodes ** 2)).reshape(mat_te.shape)
 
     # 切片做滑动窗口
     def make_seq(data):

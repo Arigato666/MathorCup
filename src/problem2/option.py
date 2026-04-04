@@ -8,7 +8,7 @@ ADJ_FILE = 'data/toy_network_adjacency.csv'
 # ================= 超参数 (Hyperparameters) =================
 SEQ_LEN = 6          # 历史时间步窗口长度 (看过去多少步)
 HIDDEN_DIM = 64      # GCN 和 GRU 的隐藏层维度
-EPOCHS = 26      # 训练轮次
+EPOCHS = 50     # 训练轮次
 BATCH_SIZE = 32      # 批大小
 LR = 0.005           # 学习率
 k_hops = 2         # 邻接矩阵的跳数
