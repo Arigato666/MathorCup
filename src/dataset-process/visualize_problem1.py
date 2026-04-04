@@ -131,6 +131,66 @@ def fig1_weekday_weekend_curves(df: pd.DataFrame, met: pd.DataFrame) -> None:
     plt.close()
 
 
+def fig1_weekday_weekend_curves_1x2_doublepeak(df: pd.DataFrame, met: pd.DataFrame) -> None:
+    """
+    1×2 layout: two OD pairs with the clearest weekday AM/PM double peaks
+    (for paper main text; same style as fig1).
+    """
+    # Order: stronger bimodal commute shape first, then second-clearer pair
+    plot_pairs = [
+        ("Node_2", "Node_5"),
+        ("Node_1", "Node_4"),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.15))
+    fig.suptitle(
+        "OD Flow Temporal Pattern Analysis (double-peak examples)",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
+
+    for ax, (o, d) in zip(axes, plot_pairs):
+        sub = df[(df["in_station"] == o) & (df["out_station"] == d)].copy()
+        sub["t"] = sub["hour"] + sub["minute"] / 60.0
+
+        wd = sub[~sub["is_weekend"]].groupby("t")["flow"].mean()
+        we = sub[sub["is_weekend"]].groupby("t")["flow"].mean()
+        t_index = np.sort(sub["t"].unique())
+        wd = wd.reindex(t_index, fill_value=0).values.astype(float)
+        we = we.reindex(t_index, fill_value=0).values.astype(float)
+
+        ax.axvspan(7, 9, alpha=0.35, color=C_AM, zorder=0, label="AM Peak")
+        ax.axvspan(17, 19, alpha=0.35, color=C_PM, zorder=0, label="PM Peak")
+        ax.plot(t_index, wd, color=C_WD, lw=2.0, label="Weekday", zorder=2)
+        ax.plot(t_index, we, color=C_WE, lw=1.8, ls="--", label="Weekend", zorder=2)
+
+        pk = int(np.argmax(wd))
+        ax.scatter(
+            t_index[pk],
+            wd[pk],
+            color=C_WD,
+            s=28,
+            zorder=3,
+            edgecolors="white",
+            linewidths=0.5,
+        )
+
+        row_m = met[(met["in_station"] == o) & (met["out_station"] == d)]
+        tii = row_m["TII"].values[0] if len(row_m) else float("nan")
+        wdi = row_m["WDI"].values[0] if len(row_m) else float("nan")
+        ax.set_title(f"{o} -> {d}    TII={tii:.3f}    WDI={wdi:.3f}", fontsize=10)
+        ax.set_xlabel("Hour of Day")
+        ax.set_ylabel("Avg Flow")
+        ax.set_xlim(0.0, 24.0)
+        ax.set_xticks(np.arange(0, 25, 2))
+        h1, l1 = ax.get_legend_handles_labels()
+        ax.legend(h1, l1, loc="upper right", fontsize=7.5, framealpha=0.95)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.savefig(FIG / "fig1_weekday_weekend_od_curves_1x2.png", bbox_inches="tight")
+    plt.close()
+
+
 def fig2_tii_bars(met: pd.DataFrame) -> None:
     plot_df = met.assign(OD=met["in_station"] + "->" + met["out_station"]).sort_values("TII")
     vals = plot_df["TII"].values
@@ -385,6 +445,8 @@ def main() -> int:
 
     fig1_weekday_weekend_curves(df, met)
     print("Saved fig1_weekday_weekend_od_curves.png")
+    fig1_weekday_weekend_curves_1x2_doublepeak(df, met)
+    print("Saved fig1_weekday_weekend_od_curves_1x2.png")
     fig2_tii_bars(met)
     print("Saved fig2_tii_all_od_pairs.png")
     fig3_heatmap_hour_weekday(df)
