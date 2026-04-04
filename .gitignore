@@ -1,5 +1,50 @@
 .DS_Store
-*.pyc
+Thumbs.db
 *.png
 /.idea
 /src/problem2/.idea
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node (if used)
+node_modules/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Matplotlib / font cache (local)
+**/.mplconfig/
+
+# 脚本生成的数据与图（可重新运行 process_od_data.py / q1_analysis.py 等复现）
+src/dataset-process/output/
+src/problem1/output/
+
+# 日志与临时文件
+*.log
+*.tmp
+temp/
