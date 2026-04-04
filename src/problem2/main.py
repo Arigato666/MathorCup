@@ -1,8 +1,11 @@
+import copy
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import warnings
@@ -10,8 +13,9 @@ import warnings
 import option
 from dataset import prep_data, get_adj
 from model import STGNN, STGAT
+from metrics import evaluate_metrics, combined_score
 
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 
 def set_seed(seed):
@@ -19,140 +23,209 @@ def set_seed(seed):
     np.random.seed(seed)
 
 
-def evaluate_epoch(model, x, y, scaler, n_nodes):
-    model.eval()
-    with torch.no_grad():
-        preds = model(x).cpu().numpy()
-        trues = y.cpu().numpy()
+def _run_name():
+    g = "G" if option.USE_GRAPH else "NOG"
+    return f"{option.model}_{g}"
 
-    # 反归一化
-    preds_inv = scaler.inverse_transform(preds.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
-    trues_inv = scaler.inverse_transform(trues.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
 
-    # 截断负数客流
-    preds_inv = np.maximum(preds_inv, 0)
-
-    # 计算三大指标
-    rmse = np.sqrt(mean_squared_error(trues_inv, preds_inv))
-    mae = mean_absolute_error(trues_inv, preds_inv)
-    r2 = r2_score(trues_inv, preds_inv)
-
-    return rmse, mae, r2
+def _fmt_acc_rel(acc_rel):
+    """打印多档相对误差命中率：|ŷ-y|/y < τ 的样本占比（非分类准确率）。"""
+    parts = []
+    for t in sorted(acc_rel.keys()):
+        pct = int(round(t * 100))
+        parts.append(f"Hit@τ={pct}%:{acc_rel[t]:.3f}")
+    return " ".join(parts)
 
 
 def main():
     set_seed(option.SEED)
     print(f"Using device: {option.DEVICE}")
+    print(f"Experiment: model={option.model}, USE_GRAPH={option.USE_GRAPH}, k_hops={option.k_hops}, USE_LOG1P={option.USE_LOG1P}")
 
-    # 1. 准备数据
-    x_tr, y_tr, x_te, y_te, scaler, n_nodes = prep_data(
+    x_train, y_train, x_val, y_val, x_test, y_test, scaler, n_nodes, meta = prep_data(
         option.TRAIN_FILE, option.TEST_FILE, option.SEQ_LEN
     )
+    use_log1p = meta["use_log1p"]
+    flow_bin_edges = meta.get("flow_bin_edges")
+
     A_norm = get_adj(option.ADJ_FILE, n_nodes)
 
-    x_tr, y_tr = x_tr.to(option.DEVICE), y_tr.to(option.DEVICE)
-    x_te, y_te = x_te.to(option.DEVICE), y_te.to(option.DEVICE)
+    x_train = x_train.to(option.DEVICE)
+    y_train = y_train.to(option.DEVICE)
+    x_val = x_val.to(option.DEVICE)
+    y_val = y_val.to(option.DEVICE)
+    x_test = x_test.to(option.DEVICE)
+    y_test = y_test.to(option.DEVICE)
     A_norm = A_norm.to(option.DEVICE)
 
-    train_loader = DataLoader(TensorDataset(x_tr, y_tr), batch_size=option.BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(
+        TensorDataset(x_train, y_train),
+        batch_size=option.BATCH_SIZE,
+        shuffle=True,
+    )
 
-    # 2. 实例化模型与优化器
-    if(option.model=='STGNN'):
+    if option.model == "STGNN":
         model = STGNN(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
-    elif(option.model=='STGAT'):
-        model=STGAT(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
+    else:
+        model = STGAT(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=option.LR)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=3
+    )
     loss_fn = nn.MSELoss()
 
-    # 记录原始指标
-    test_rmse_history = []
-    test_mae_history = []
-    test_r2_history = []
-
-    # 记录三者平均后的综合得分
+    val_rmse_history = []
+    val_mae_history = []
+    val_r2_history = []
+    val_mape_history = []
+    val_acc_history = []
     train_score_history = []
-    test_score_history = []
+    val_score_history = []
 
-    # 3. 训练循环
+    best_val = float("inf")
+    best_state = None
+    patience_left = (
+        option.EARLY_STOP_PATIENCE
+        if option.EARLY_STOP_PATIENCE > 0
+        else float("inf")
+    )
+
     print("\n[Start Training]")
+    stopped_epoch = option.EPOCHS
+
     for ep in range(option.EPOCHS):
         model.train()
-        train_loss = 0
-
-        pbar = tqdm(train_loader, desc=f'Epoch {ep + 1}/{option.EPOCHS}', leave=False)
+        pbar = tqdm(train_loader, desc=f"Epoch {ep + 1}/{option.EPOCHS}", leave=False)
         for batch_x, batch_y in pbar:
             optimizer.zero_grad()
             pred = model(batch_x)
             loss = loss_fn(pred, batch_y)
             loss.backward()
             optimizer.step()
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-            train_loss += loss.item()
-            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+        m_tr = evaluate_metrics(
+            model,
+            x_train,
+            y_train,
+            scaler,
+            n_nodes,
+            use_log1p,
+            option.FLOW_EPS,
+            option.ACC_REL_TAUS,
+            option.DEVICE,
+            flow_bin_edges,
+        )
+        m_val = evaluate_metrics(
+            model,
+            x_val,
+            y_val,
+            scaler,
+            n_nodes,
+            use_log1p,
+            option.FLOW_EPS,
+            option.ACC_REL_TAUS,
+            option.DEVICE,
+            flow_bin_edges,
+        )
 
-        # 每一轮结束评估
-        rmse_tr, mae_tr, r2_tr = evaluate_epoch(model, x_tr, y_tr, scaler, n_nodes)
-        rmse_te, mae_te, r2_te = evaluate_epoch(model, x_te, y_te, scaler, n_nodes)
+        score_tr = combined_score(m_tr)
+        score_val = combined_score(m_val)
+        scheduler.step(score_val)
 
-        # 统一步调：把 R2 变成越小越好 (1 - R2)，然后求平均
-        score_tr = (rmse_tr + mae_tr + (1 - r2_tr)) / 3.0
-        score_te = (rmse_te + mae_te + (1 - r2_te)) / 3.0
-
-        test_rmse_history.append(rmse_te)
-        test_mae_history.append(mae_te)
-        test_r2_history.append(r2_te)
-
+        val_rmse_history.append(m_val["rmse"])
+        val_mae_history.append(m_val["mae"])
+        val_r2_history.append(m_val["r2"])
+        val_mape_history.append(m_val["mape"])
+        val_acc_history.append(m_val["acc_rel"].get(float(option.ACC_REL_TAUS[0]), float("nan")))
         train_score_history.append(score_tr)
-        test_score_history.append(score_te)
+        val_score_history.append(score_val)
 
-        if (ep + 1) % 5 == 0:
-            print(f"Epoch [{ep + 1}/{option.EPOCHS}] | Train Score: {score_tr:.4f} | Test Score: {score_te:.4f}")
+        if score_val < best_val:
+            best_val = score_val
+            best_state = copy.deepcopy(model.state_dict())
+            if option.EARLY_STOP_PATIENCE > 0:
+                patience_left = option.EARLY_STOP_PATIENCE
+        else:
+            if option.EARLY_STOP_PATIENCE > 0:
+                patience_left -= 1
 
-    # 4. === 打印最后一轮的三大指标 ===
-    final_rmse = test_rmse_history[-1]
-    final_mae = test_mae_history[-1]
-    final_r2 = test_r2_history[-1]
+        if (ep + 1) % 5 == 0 or ep == 0:
+            print(
+                f"Epoch [{ep + 1}/{option.EPOCHS}] | "
+                f"train_score={score_tr:.4f} val_score={score_val:.4f} | "
+                f"val RMSE={m_val['rmse']:.4f} MAE={m_val['mae']:.4f} R²={m_val['r2']:.4f} | "
+                f"MAPE={m_val['mape']:.4f} | {_fmt_acc_rel(m_val['acc_rel'])}"
+            )
 
-    print("\n" + "=" * 45)
-    print(f"🏁 【最终模型全局成绩单 (Epoch {option.EPOCHS} 结束时)】")
-    print(f"   是否引入图结构 (USE_GRAPH) : {option.USE_GRAPH}")
-    print("-" * 45)
-    print(f"   均方根误差 (RMSE) : {final_rmse:.4f}")
-    print(f"   平均绝对误差 (MAE) : {final_mae:.4f}")
-    print(f"   决定系数 (R²)     : {final_r2:.4f}")
-    print("=" * 45)
+        if option.EARLY_STOP_PATIENCE > 0 and patience_left <= 0:
+            stopped_epoch = ep + 1
+            print(f"[Early stopping] at epoch {stopped_epoch}, best val_score={best_val:.4f}")
+            break
 
-    # 5. 绘制综合得分 (Combined Score) 学习曲线
-    best_epoch = np.argmin(test_score_history)
-    best_score = test_score_history[best_epoch]
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    m_test = evaluate_metrics(
+        model,
+        x_test,
+        y_test,
+        scaler,
+        n_nodes,
+        use_log1p,
+        option.FLOW_EPS,
+        option.ACC_REL_TAUS,
+        option.DEVICE,
+        flow_bin_edges,
+    )
+
+    print("\n" + "=" * 52)
+    print(f"【测试集（第四周）】model={option.model} USE_GRAPH={option.USE_GRAPH}")
+    print("-" * 52)
+    print(f"  RMSE : {m_test['rmse']:.4f}")
+    print(f"  MAE  : {m_test['mae']:.4f}")
+    print(f"  R²   : {m_test['r2']:.4f}")
+    print(f"  MAPE : {m_test['mape']:.4f}  (y>{option.FLOW_EPS})")
+    print(f"  WAPE : {m_test['wape']:.4f}")
+    print("  相对误差命中率：在 y>eps 格点上 |ŷ-y|/y < τ")
+    print(f"  {_fmt_acc_rel(m_test['acc_rel'])}")
+    print(
+        f"  整数一致率(仅y>eps): {m_test['acc_round_nz']:.4f}  "
+        f"(round(ŷ)=round(y)，回归任务里通常低于分类准确率)"
+    )
+    print(
+        f"  分档准确率(训练集分位分{option.ACC_BIN_K}类): {m_test['acc_bin']:.4f}  "
+        f"(将 y 与 ŷ 按同一箱边界分类后，类别完全一致的比例)"
+    )
+    print("=" * 52)
+
+    best_epoch = int(np.argmin(val_score_history)) + 1
+    best_val_sc = float(np.min(val_score_history))
 
     plt.figure(figsize=(10, 6))
-    epochs_range = range(1, option.EPOCHS + 1)
-
-    plt.plot(epochs_range, train_score_history, label='Train Combined Score', color='#1f77b4', linewidth=2)
-    plt.plot(epochs_range, test_score_history, label='Test Combined Score', color='#ff7f0e', linewidth=2)
-
-    # 圈出综合得分的最优拐点（极小值）
-    plt.scatter(best_epoch + 1, best_score, color='red', s=100, zorder=5)
-    plt.annotate(f'Lowest Combined Score:\nEpoch: {best_epoch + 1}\nScore: {best_score:.4f}',
-                 xy=(best_epoch + 1, best_score),
-                 xytext=(best_epoch + 1 + 2, best_score + 0.1),
-                 arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
-                 fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-
-    title_suffix = "with Graph" if option.USE_GRAPH else "without Graph (Baseline)"
-    plt.title(f'Learning Curve: Average Combined Score ({title_suffix})', fontsize=14, fontweight='bold')
-    plt.xlabel('Epochs', fontsize=12)
-    plt.ylabel('Combined Score = (RMSE + MAE + (1-R²)) / 3', fontsize=11)
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.legend(fontsize=12)
+    epochs_range = range(1, len(train_score_history) + 1)
+    plt.plot(epochs_range, train_score_history, label="Train combined score", color="#1f77b4", linewidth=2)
+    plt.plot(epochs_range, val_score_history, label="Val combined score", color="#ff7f0e", linewidth=2)
+    plt.scatter(best_epoch, best_val_sc, color="red", s=100, zorder=5)
+    plt.annotate(
+        f"Best val:\nepoch {best_epoch}\nscore {best_val_sc:.4f}",
+        xy=(best_epoch, best_val_sc),
+        xytext=(best_epoch + 1, best_val_sc + 0.05),
+        arrowprops=dict(facecolor="black", shrink=0.05, width=1, headwidth=6),
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8),
+    )
+    title = f"{_run_name()} | log1p={use_log1p}"
+    plt.title(f"Learning curve ({title})", fontsize=14, fontweight="bold")
+    plt.xlabel("Epochs")
+    plt.ylabel("(RMSE + MAE + (1-R²)) / 3")
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.legend()
     plt.tight_layout()
-
-    save_path = f"learning_curve_avg_{'STGNN' if option.USE_GRAPH else 'Baseline'}.png"
+    save_path = f"learning_curve_{_run_name()}.png"
     plt.savefig(save_path, dpi=300)
-    print(f"\n折线图已保存为: {save_path}")
-    plt.show()
+    print(f"\n学习曲线已保存: {save_path}")
 
 
 if __name__ == "__main__":
