@@ -29,10 +29,10 @@ def prep_data(train_csv, test_csv, seq_len):
     mat_tr = build_tensor(df_tr)
     mat_te = build_tensor(df_te)
 
-    # 铺平做归一化
+    # 铺平为单列做【全局】归一化，保留 OD 对之间的大小差异
     scaler = MinMaxScaler()
-    tr_scaled = scaler.fit_transform(mat_tr.reshape(-1, n_nodes ** 2)).reshape(mat_tr.shape)
-    te_scaled = scaler.transform(mat_te.reshape(-1, n_nodes ** 2)).reshape(mat_te.shape)
+    tr_scaled = scaler.fit_transform(mat_tr.reshape(-1, 1)).reshape(mat_tr.shape)
+    te_scaled = scaler.transform(mat_te.reshape(-1, 1)).reshape(mat_te.shape)
 
     # 切片做滑动窗口
     def make_seq(data):
@@ -49,21 +49,40 @@ def prep_data(train_csv, test_csv, seq_len):
 
 
 def get_adj(adj_file, n_nodes):
-    # 如果消融实验关掉了图结构，直接返回单位矩阵 (退化为不考虑邻居)
+    """
+    根据EDA 结论 (h=4 时流量最大)，构建高阶多跳邻接矩阵。
+    让模型突破 1 跳的近视眼，直接捕捉中远距离的拓扑相关性。
+    """
     if not option.USE_GRAPH:
         print("【消融实验】已屏蔽拓扑图，当前为纯时序 Baseline")
         return torch.eye(n_nodes)
 
     df_adj = pd.read_csv(adj_file, index_col=0)
     df_adj = df_adj.sort_index(axis=0).sort_index(axis=1)
-    A = df_adj.values.astype(np.float32)
+    A_base = df_adj.values.astype(np.float32)
 
-    # GCN 归一化: D^-0.5 * (A+I) * D^-0.5
-    np.fill_diagonal(A, 1.0)
-    D = np.sum(A, axis=1)
+    # === 核心改进：计算 K 跳可达矩阵 ===
+    # 既然 h=4 是主力，我们就让节点不仅连着邻居，还连着邻居的邻居...
+    A_multihop = np.copy(A_base)
+    A_temp = np.copy(A_base)
+
+    for _ in range(2, option.k_hops + 1):
+        A_temp = np.matmul(A_temp, A_base)  # A^2, A^3, A^4...
+        A_multihop += A_temp
+
+    # 只要 k 跳以内能到的，都在掩码图里标为 1 (连通)
+    A_multihop = (A_multihop > 0).astype(np.float32)
+    # ==================================
+
+    # 加上自环
+    np.fill_diagonal(A_multihop, 1.0)
+
+    # 归一化 D^-0.5 * A * D^-0.5
+    D = np.sum(A_multihop, axis=1)
     D_inv = np.power(D, -0.5)
     D_inv[np.isinf(D_inv)] = 0.
     D_mat = np.diag(D_inv)
 
-    A_norm = D_mat @ A @ D_mat
+    A_norm = D_mat @ A_multihop @ D_mat
+
     return torch.FloatTensor(A_norm)

@@ -1,3 +1,5 @@
 .DS_Store
 *.pyc
 *.png
+/.idea
+/src/problem2/.idea

@@ -9,7 +9,7 @@ import warnings
 
 import option
 from dataset import prep_data, get_adj
-from model import STGNN
+from model import STGNN, STGAT
 
 warnings.filterwarnings('ignore')
 
@@ -26,8 +26,8 @@ def evaluate_epoch(model, x, y, scaler, n_nodes):
         trues = y.cpu().numpy()
 
     # 反归一化
-    preds_inv = scaler.inverse_transform(preds.reshape(-1, n_nodes ** 2))
-    trues_inv = scaler.inverse_transform(trues.reshape(-1, n_nodes ** 2))
+    preds_inv = scaler.inverse_transform(preds.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
+    trues_inv = scaler.inverse_transform(trues.reshape(-1, 1)).reshape(-1, n_nodes ** 2)
 
     # 截断负数客流
     preds_inv = np.maximum(preds_inv, 0)
@@ -57,7 +57,11 @@ def main():
     train_loader = DataLoader(TensorDataset(x_tr, y_tr), batch_size=option.BATCH_SIZE, shuffle=True)
 
     # 2. 实例化模型与优化器
-    model = STGNN(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
+    if(option.model=='STGNN'):
+        model = STGNN(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
+    elif(option.model=='STGAT'):
+        model=STGAT(n_nodes, option.HIDDEN_DIM, A_norm).to(option.DEVICE)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=option.LR)
     loss_fn = nn.MSELoss()
 
@@ -119,36 +123,36 @@ def main():
     print(f"   决定系数 (R²)     : {final_r2:.4f}")
     print("=" * 45)
 
-    # # 5. 绘制综合得分 (Combined Score) 学习曲线
-    # best_epoch = np.argmin(test_score_history)
-    # best_score = test_score_history[best_epoch]
-    #
-    # plt.figure(figsize=(10, 6))
-    # epochs_range = range(1, option.EPOCHS + 1)
-    #
-    # plt.plot(epochs_range, train_score_history, label='Train Combined Score', color='#1f77b4', linewidth=2)
-    # plt.plot(epochs_range, test_score_history, label='Test Combined Score', color='#ff7f0e', linewidth=2)
-    #
-    # # 圈出综合得分的最优拐点（极小值）
-    # plt.scatter(best_epoch + 1, best_score, color='red', s=100, zorder=5)
-    # plt.annotate(f'Lowest Combined Score:\nEpoch: {best_epoch + 1}\nScore: {best_score:.4f}',
-    #              xy=(best_epoch + 1, best_score),
-    #              xytext=(best_epoch + 1 + 2, best_score + 0.1),
-    #              arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
-    #              fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
-    #
-    # title_suffix = "with Graph" if option.USE_GRAPH else "without Graph (Baseline)"
-    # plt.title(f'Learning Curve: Average Combined Score ({title_suffix})', fontsize=14, fontweight='bold')
-    # plt.xlabel('Epochs', fontsize=12)
-    # plt.ylabel('Combined Score = (RMSE + MAE + (1-R²)) / 3', fontsize=11)
-    # plt.grid(True, linestyle='--', alpha=0.6)
-    # plt.legend(fontsize=12)
-    # plt.tight_layout()
-    #
-    # save_path = f"learning_curve_avg_{'STGNN' if option.USE_GRAPH else 'Baseline'}.png"
-    # plt.savefig(save_path, dpi=300)
-    # print(f"\n折线图已保存为: {save_path}")
-    # plt.show()
+    # 5. 绘制综合得分 (Combined Score) 学习曲线
+    best_epoch = np.argmin(test_score_history)
+    best_score = test_score_history[best_epoch]
+
+    plt.figure(figsize=(10, 6))
+    epochs_range = range(1, option.EPOCHS + 1)
+
+    plt.plot(epochs_range, train_score_history, label='Train Combined Score', color='#1f77b4', linewidth=2)
+    plt.plot(epochs_range, test_score_history, label='Test Combined Score', color='#ff7f0e', linewidth=2)
+
+    # 圈出综合得分的最优拐点（极小值）
+    plt.scatter(best_epoch + 1, best_score, color='red', s=100, zorder=5)
+    plt.annotate(f'Lowest Combined Score:\nEpoch: {best_epoch + 1}\nScore: {best_score:.4f}',
+                 xy=(best_epoch + 1, best_score),
+                 xytext=(best_epoch + 1 + 2, best_score + 0.1),
+                 arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6),
+                 fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
+
+    title_suffix = "with Graph" if option.USE_GRAPH else "without Graph (Baseline)"
+    plt.title(f'Learning Curve: Average Combined Score ({title_suffix})', fontsize=14, fontweight='bold')
+    plt.xlabel('Epochs', fontsize=12)
+    plt.ylabel('Combined Score = (RMSE + MAE + (1-R²)) / 3', fontsize=11)
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend(fontsize=12)
+    plt.tight_layout()
+
+    save_path = f"learning_curve_avg_{'STGNN' if option.USE_GRAPH else 'Baseline'}.png"
+    plt.savefig(save_path, dpi=300)
+    print(f"\n折线图已保存为: {save_path}")
+    plt.show()
 
 
 if __name__ == "__main__":
