@@ -31,10 +31,11 @@ from scipy.signal import correlate
 
 EPS = 1e-5
 NODES = [f"Node_{i}" for i in range(8)]
-INPUT = HERE.parent / "dataset-process" / "output" / "od_cleaned_full.csv"
+SRC = HERE.parent.parent  # repo src/: Q1 -> problem1 -> src
+INPUT = SRC / "dataset-process" / "output" / "od_cleaned_full.csv"
 OUT_DIR = HERE / "output"
 FIG_DIR = OUT_DIR / "figures"
-PRE_FIG_DIR = HERE.parent / "dataset-process" / "output" / "figures"
+PRE_FIG_DIR = SRC / "dataset-process" / "output" / "figures"
 
 PALETTE = {
     "weekday": "#355C7D",
@@ -361,6 +362,7 @@ def copy_preprocess_figures() -> None:
     """
     mapping = {
         "fig1_weekday_weekend_od_curves.png": "q1_from_preprocess_fig1_curves.png",
+        "fig1_weekday_weekend_od_curves_1x2.png": "q1_from_preprocess_fig1_curves_1x2.png",
         "fig3_heatmap_hour_weekday.png": "q1_from_preprocess_fig3_heatmap.png",
     }
     for src_name, dst_name in mapping.items():
