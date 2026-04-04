@@ -180,26 +180,38 @@ def plot_learning_curves(
     h_va_g: list[float],
     path: str,
 ) -> None:
+    # 与 visualize_problem2 统一：ST-GCN 深紫 #7F4A88，Pure-GRU 豆沙粉 #DE95BA
+    c_stgcn, c_gru = "#7F4A88", "#DE95BA"
+    bg, grid_c = "#FFFDFB", "#EEE8EE"
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.patch.set_facecolor(bg)
     loss_name = "Weighted Huber" if cfg.USE_WEIGHTED_HUBER else "Huber"
     for ax, h_tr, h_va, title, color in zip(
         axes,
         [h_tr_s, h_tr_g],
         [h_va_s, h_va_g],
         ["ST-GCN", "Pure-GRU"],
-        ["#2166AC", "#D6604D"],
+        [c_stgcn, c_gru],
     ):
+        ax.set_facecolor("#FFFFFF")
         ep = np.arange(1, len(h_va) + 1)
-        ax.plot(ep, h_tr, color=color, alpha=0.55, lw=1.2, label="Train")
-        ax.plot(ep, h_va, color=color, lw=2.0, label="Val (week 4)")
+        ax.plot(ep, h_tr, color=color, alpha=0.5, lw=1.25, label="Train")
+        ax.plot(ep, h_va, color=color, lw=2.05, label="Val (week 4)")
         ax.set_xlabel("Epoch")
         ax.set_ylabel(loss_name)
-        ax.set_title(title)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-    plt.suptitle("v4: ablation learning curves (lower is better)", fontweight="bold")
+        ax.set_title(title, fontweight="600")
+        ax.legend(framealpha=0.95, edgecolor="#D4C4D0")
+        ax.grid(True, color=grid_c, linestyle="-", linewidth=0.7, alpha=1.0)
+        ax.set_axisbelow(True)
+        for spine in ax.spines.values():
+            spine.set_color("#9B8AA0")
+    plt.suptitle(
+        "v4: ablation learning curves (lower is better)",
+        fontweight="bold",
+        color="#202124",
+    )
     plt.tight_layout()
-    plt.savefig(path, dpi=200)
+    plt.savefig(path, dpi=200, facecolor=fig.get_facecolor())
     plt.close()
     print(f"曲线: {path}")
 
@@ -275,6 +287,16 @@ def main() -> None:
     export_submission(
         cfg.OUT_SUBMISSION,
         stgcn,
+        dl_te,
+        scaler,
+        device,
+        pairs,
+        meta["all_times"],
+        meta["test_target_tidx"],
+    )
+    export_submission(
+        cfg.OUT_SUBMISSION_GRU,
+        gru_only,
         dl_te,
         scaler,
         device,

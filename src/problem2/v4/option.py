@@ -30,4 +30,6 @@ GRU_HIDDEN = 64
 TIME_FEAT_DIM = 5
 
 OUT_SUBMISSION = str(_ROOT / "prediction_week4_v4.csv")
+OUT_SUBMISSION_GRU = str(_ROOT / "prediction_week4_v4_gru.csv")
 OUT_CURVE = str(_ROOT / "learning_curve_v4.png")
+FIG_Q2_DIR = _ROOT / "figures_q2"
